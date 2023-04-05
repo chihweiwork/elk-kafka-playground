@@ -1,0 +1,96 @@
+version: '3'
+
+networks:
+  ek-node:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
+          gateway: 172.28.0.1
+
+services:
+  centos-es:
+    image: docker.io/library/centos:centos7
+    container_name: centos-es
+    hostname: centos-es
+    tty: true
+    privileged: true
+    networks:
+      ek-node:
+        ipv4_address: 172.28.0.2
+    environment:
+      - LANG=en_US.UTF-8
+    volumes:
+      - ./Makefile:/tmp/Makefile
+    command: "/bin/bash"
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.15.2
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+    networks:
+      ek-node:
+        ipv4_address: 172.28.0.3
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.15.2
+    container_name: kibana
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - 5601:5601
+    networks:
+      ek-node:
+        ipv4_address: 172.28.0.4
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.15.2
+    container_name: logstash
+    command: logstash -f /usr/share/logstash/pipeline/logstash.conf
+    volumes:
+      - ./logstash/pipeline:/usr/share/logstash/pipeline
+    environment:
+      - "ELASTICSEARCH_HOSTS=http://elasticsearch:9200"
+    depends_on:
+      - elasticsearch
+      - kafka
+    networks:
+      ek-node:
+        ipv4_address: 172.28.0.5
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka-node
+    networks:
+      ek-node:
+        ipv4_address: 172.28.0.10
+    environment:
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+    depends_on:
+      - zookeeper
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
+    networks:
+      ek-node:
+        ipv4_address: 172.28.0.11
+    environment:
+      - ZOOKEEPER_CLIENT_PORT=2181
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    networks:
+      ek-node:
+        ipv4_address: 172.28.0.12
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=my_cluster
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
